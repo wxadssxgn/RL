@@ -8,7 +8,7 @@ import time
 import matplotlib.pyplot as plt
 
 # Define Object and Initial Geometry
-obj = pd.DataFrame(np.array([2.45, 1.85]).reshape(1, 2), columns=['R', 'r'])
+obj = pd.DataFrame(np.array([3.45, 1.85]).reshape(1, 2), columns=['R', 'r'])
 init = pd.DataFrame(np.array([3.35, 2.75]).reshape(1, 2), columns=['R', 'r'])
 
 
@@ -65,7 +65,7 @@ def choose_action(current_state, q_table):
     if (np.random.uniform() > epsilon) or (state_actions.all() == 0):
         action_name = np.random.choice(actions)
     else:
-        action_name = state_actions.argmax()
+        action_name = state_actions.idxmax()
     return action_name
 
 
@@ -83,25 +83,25 @@ def env_feedback(current_state, action_name):
         tmp_state.iloc[:, 0] = round(current_state.iloc[:, 0][0] + 0.05, 2)
         if not para_restrict(tmp_state):
             tmp_state = pd.DataFrame.copy(current_state)
-            r = -1
+            r = -10
             return tmp_state, r
     elif action_name == 'R-0.05':
         tmp_state.iloc[:, 0] = round(current_state.iloc[:, 0][0] - 0.05, 2)
         if not para_restrict(tmp_state):
             tmp_state = pd.DataFrame.copy(current_state)
-            r = -1
+            r = -10
             return tmp_state, r
     elif action_name == 'r+0.05':
         tmp_state.iloc[:, 1] = round(current_state.iloc[:, 1][0] + 0.05, 2)
         if not para_restrict(tmp_state):
             tmp_state = pd.DataFrame.copy(current_state)
-            r = -1
+            r = -10
             return tmp_state, r
     else:
         tmp_state.iloc[:, 1] = round(current_state.iloc[:, 1][0] - 0.05, 2)
         if not para_restrict(tmp_state):
             tmp_state = pd.DataFrame.copy(current_state)
-            r = -1
+            r = -10
             return tmp_state, r
     r = reward(tmp_state)
     return tmp_state, r
@@ -112,7 +112,7 @@ def reward(current_state):
     current_state_index = geo_table[(geo_table.R == current_state.loc[:, 'R'][0]) & (geo_table.r == current_state.loc[:, 'r'][0])].index[0]
     current_spec = spectrum[current_state_index]
     tmp_spec_error = spec_error(obj_spec, current_spec)
-    reward = -np.log(tmp_spec_error) - 10
+    reward = -np.log(tmp_spec_error) - 5
     # reward = tmp_spec_error
     return reward
 
