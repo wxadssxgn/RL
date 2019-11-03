@@ -8,9 +8,9 @@ from torch.autograd import Variable
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Define Object and Initial Geometry
-OBJ = pd.DataFrame(np.array([2.65, 1.95]).reshape(1, 2), columns=['R', 'r'])
-INIT = pd.DataFrame(np.array([3.35, 2.75]).reshape(1, 2), columns=['R', 'r'])
+# Define object and initial geometry
+obj = np.array([2.65, 1.95]).reshape(1, 2)
+init = np.array([3.35, 2.75]).reshape(1, 2)
 
 # Obtain the Absolute Value of S Parameter
 def Get_S_Para(s_parameter):
@@ -23,26 +23,35 @@ def Get_S_Para(s_parameter):
         s_abs[i] = temp
     return s_abs
 
-# Get the Geometry and Spectrum Data
-SPECTRUM = np.load(file='HYB_s.npy')
-SPECTRUM = Get_S_Para(SPECTRUM)
-GEOMETRY = np.load(file='HYB_g.npy')[:, 0: 2]
-GEO_TABLE = pd.DataFrame(GEOMETRY, columns=['R', 'r'])
-OBJ_INDEX = GEO_TABLE[(GEO_TABLE.R==OBJ.loc[:, 'R'][0])&(GEO_TABLE.r==OBJ.loc[:, 'r'][0])].index[0]
-OBJ_SPEC = SPECTRUM[OBJ_INDEX]
-INIT_INDEX = GEO_TABLE[(GEO_TABLE.R==INIT.loc[:, 'R'][0])&(GEO_TABLE.r==INIT.loc[:, 'r'][0])].index[0]
-INIT_SPEC = SPECTRUM[INIT_INDEX]
+# Get the geometry and spectrum Data
+spectrum = np.load(file='HYB_s.npy')
+spectrum = Get_S_Para(spectrum)
+geometry = np.load(file='HYB_g.npy')[:, 0: 2]
+geometry = geometry[:, np.newaxis, :]
+
+def get_index(s):
+    for i in range(len(geometry)):
+        if (geometry[i] == np.array(s).astype(float).round(2).reshape(1, 2)).all():
+            return i
+
+obj_index = get_index(obj)
+init_index = get_index(init)
+obj_spec = spectrum[obj_index]
+init_spec = spectrum[init_index]
 
 # Define Hyperparameters
-N_STATES = len(GEOMETRY)
-ACTIONS = ['R+0.05', 'R-0.05', 'r+0.05', 'r-0.05']
-EPSILON = 0.9
-ALPHA = 0.1
-GAMMA = 0.9
+n_states = 2
+actions = ['R+0.05', 'R-0.05', 'r+0.05', 'r-0.05']
+epsilon = 0.9
+alpha = 0.1
+gamma = 0.9
+memory_capacity = 100
+LR = 0.01
+batch_size = 20
 
-class MODEL(nn.Module):
+class model(nn.Module):
     def __init__(self, ):
-        super(MODEL, self).__init__()
+        super(model, self).__init__()
         self.layer1 = nn.Sequential(nn.Linear(2, 20), nn.Dropout(0), nn.ReLU(inplace=True))
         self.layer2 = nn.Sequential(nn.Linear(20, 20), nn.Dropout(0), nn.ReLU(inplace=True))
         self.layer3 = nn.Sequential(nn.Linear(20, 20), nn.Dropout(0), nn.ReLU(inplace=True))
@@ -55,78 +64,97 @@ class MODEL(nn.Module):
         x = self.layer4(x)
         return x
 
-class DQN():
+class dqn():
     def __init__(self, ):
-        self.EVAL_MODEL = MODEL()
-        self.TAR_MODEL = MODEL()
-        self.learn_step_counter = 0                                     # for target updating
-        self.memory_counter = 0                                         # for storing memory
-        self.memory = np.zeros((MEMORY_CAPACITY, N_STATES * 2 + 2))     # initialize memory
-        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
+        self.eval_model = model()
+        self.target_model = model()
+        self.learn_step_counter = 0
+        self.memory_counter = 0
+        self.target_replace_iteration = 10
+        self.memory = np.zeros((memory_capacity, 1, n_states * 2 + 2))
+        self.optimizer = torch.optim.Adam(self.eval_model.parameters(), lr=LR)
         self.loss_func = nn.MSELoss()
 
-    def CHOOSE_ACTION(self, x):
-        if np.random.uniform() < EPSILON:
-            ACTION = self.EVAL_MODEL.forward(x)
-            return ACTION
+    def choose_action(self, s):
+        if np.random.uniform() < epsilon:
+            action_values = self.eval_model.forward(s)
+            a_index = torch.max(action_values, 1)[1].numpy()
+            return a_index
+        else:
+            a_index = np.random.randint(0, actions)
+            return a_index
     
-    def MEMORY(self, STATE, ACTION, REWARD, STATE_):
-        transition = np.hstack(STATE, (ACTION, REWARD), STATE_)
-        index = self.memory_counter % MEMORY_CAPACITY
-        self.memory[index, :] = transition
+    def env_feedback(self, s, a):
+        s_ = s.clone()
+        if a == 0:
+            s_[0, 0] = s_[0, 0] + 0.05
+        elif a == 1:
+            s_[0, 0] = s_[0, 0] - 0.05
+        elif a == 2:
+            s_[0, 1] = s_[0, 1] + 0.05
+        else:
+            s_[0, 1] = s_[0, 1] - 0.05
+        if s_[0, 1] >= s_[0, 0] or s_[0, 0] > 3.80 or s_[0, 1] < 1.00:
+            s_ = s.clone()
+        return s_
+
+    def store_transition(self, s, a, r, s_):
+        s = np.array(s).astype(float).round(2).reshape(1, 2)
+        s_ = np.array(s_).astype(float).round(2).reshape(1, 2)
+        a = np.array(a).astype(int).reshape(1, 1)
+        r = np.array(r).astype(float).reshape(1, 1)
+        transition = np.hstack((s, a, r, s_))
+        index = self.memory_counter % memory_capacity
+        self.memory[index] = transition
         self.memory_counter += 1
-    
-    def LEARN(self):
+
+    def reward(self, s, s_):
+        s_index = get_index(s)
+        s_index_ = get_index(s_)
+        s_spec = spectrum[s_index]
+        s_spec_ = spectrum[s_index_]
+        s_spec = np.concatenate((s_spec[:, 0], s_spec[:, 1]), axis=0)
+        s_spec_ = np.concatenate((s_spec_[:, 0], s_spec_[:, 1]), axis=0)
+        s_error = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(obj_spec)
+        s_error_ = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(obj_spec)
+        r1 = min(-np.log(s_error), 100)
+        r2 = min(-np.log(s_error_), 100)
+        r = r2 - r1
+        return r
+
+    def learn(self):
         # target parameter update
-        if self.learn_step_counter % TARGET_REPLACE_ITER == 0:
-            self.target_net.load_state_dict(self.eval_net.state_dict())
+        if self.learn_step_counter % self.target_replace_iteration == 0:
+            self.target_model.load_state_dict(self.eval_model.state_dict())
         self.learn_step_counter += 1
         # sample batch transitions
-        sample_index = np.random.choice(MEMORY_CAPACITY, BATCH_SIZE)
-        b_memory = self.memory[sample_index, :]
-        b_s = torch.FloatTensor(b_memory[:, :N_STATES])
-        b_a = torch.LongTensor(b_memory[:, N_STATES:N_STATES+1].astype(int))
-        b_r = torch.FloatTensor(b_memory[:, N_STATES+1:N_STATES+2])
-        b_s_ = torch.FloatTensor(b_memory[:, -N_STATES:])
+        sample_index = np.random.choice(memory_capacity, batch_size)
+        b_memory = self.memory[sample_index]
+        b_s = torch.FloatTensor(b_memory[:, :, :n_states])
+        b_a = torch.LongTensor(b_memory[:, :, n_states:n_states+1].astype(int))
+        b_r = torch.FloatTensor(b_memory[:, :, n_states+1:n_states+2])
+        b_s_ = torch.FloatTensor(b_memory[:, :, -n_states:])
         # q_eval w.r.t the action in experience
-        q_eval = self.eval_net(b_s).gather(1, b_a)  # shape (batch, 1)
-        q_next = self.target_net(b_s_).detach()     # detach from graph, don't backpropagate
-        q_target = b_r + GAMMA * q_next.max(1)[0].view(BATCH_SIZE, 1)   # shape (batch, 1)
+        q_eval = self.eval_model(b_s).gather(2, b_a).reshape(batch_size, 1)
+        q_next = self.target_model(b_s_).detach()     # detach from graph, don't backpropagate
+        q_target = b_r.reshape(batch_size, 1) + gamma * q_next.max(2)[0].view(batch_size, 1)   # shape (batch, 1)
         loss = self.loss_func(q_eval, q_target)
+        print('loss:', loss)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
+dqn_model = dqn()
 
-dqn = DQN()
-
-print('\nCollecting experience...')
-
-for i_episode in range(400):
-    s = env.reset()
-    ep_r = 0
-    while True:
-        env.render()
-        a = dqn.choose_action(s)
-        # take action
-        s_, r, done, info = env.step(a)
-        # modify the reward
-        x, x_dot, theta, theta_dot = s_
-        r1 = (env.x_threshold - abs(x)) / env.x_threshold - 0.8
-        r2 = (env.theta_threshold_radians - abs(theta)) / env.theta_threshold_radians - 0.5
-        r = r1 + r2
-        dqn.store_transition(s, a, r, s_)
-        ep_r += r
-        if dqn.memory_counter > MEMORY_CAPACITY:
-            dqn.learn()
-            if done:
-                print('Ep: ', i_episode,
-                      '| Ep_r: ', round(ep_r, 2))
-        if done:
-            break
-        s = s_
-
-
-
+s_tmp = np.array(init)
+s_tmp = torch.Tensor(s_tmp)
+for i in range(5000):
+    a_tmp = dqn_model.choose_action(s_tmp)
+    s_tmp_ = dqn_model.env_feedback(s_tmp, a_tmp)
+    r_tmp = dqn_model.reward(s_tmp, s_tmp_)
+    dqn_model.store_transition(s_tmp, a_tmp, r_tmp, s_tmp_)
+    s_tmp = s_tmp_.clone()
+    if dqn_model.memory_counter > memory_capacity:
+        dqn_model.learn()
 
 print('end')
