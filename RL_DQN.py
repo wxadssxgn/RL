@@ -48,8 +48,8 @@ class DQN():
         self.LR = 1e-3
         self.batch_size = 100
 
-        self.eval_model = model()
-        self.target_model = model()
+        self.eval_model = model().cuda() if torch.cuda.is_available() else model()
+        self.target_model = model().cuda() if torch.cuda.is_available() else model()
         self.eval_model.apply(self.weights_init_uniform)
         self.target_model.apply(self.weights_init_uniform)
 
@@ -60,6 +60,7 @@ class DQN():
         self.optimizer = torch.optim.Adam(self.eval_model.parameters(), lr=self.LR)
         self.loss_func = nn.MSELoss()
         self.loss_list = []
+        self.loss_tmp = torch.cuda.FloatTensor([0]) if torch.cuda.is_available() else torch.Tensor([0])
 
     def weights_init_uniform(self, m):
         classname = m.__class__.__name__
@@ -86,7 +87,7 @@ class DQN():
         # a_index.type = array
         if np.random.uniform() < self.epsilon:
             action_values = self.eval_model.forward(s)
-            a_index = torch.max(action_values, 1)[1].numpy()
+            a_index = torch.max(action_values, 1)[1].cpu().numpy()
         else:
             a_index = np.random.randint(0, 4, size=(1, ))
         return a_index
@@ -95,7 +96,7 @@ class DQN():
         # a_index.type = array
         if np.random.uniform() > self.greedy_epsilon:
             action_values = self.eval_model.forward(s)
-            a_index = torch.max(action_values, 1)[1].numpy()
+            a_index = torch.max(action_values, 1)[1].cpu().numpy()
         else:
             a_index = np.random.randint(0, 4, size=(1, ))
         if i % 500 == 0:
@@ -115,12 +116,14 @@ class DQN():
             s_[0, 1] = s_[0, 1] + 0.05
         else:
             s_[0, 1] = s_[0, 1] - 0.05
-        tmp_s = s_.numpy().round(2)
+        tmp_s = s_.cpu().numpy().round(2)
         if tmp_s[0, 1] >= tmp_s[0, 0] or tmp_s[0, 0] > 3.80 or tmp_s[0, 1] < 1.00:
             s_ = s.clone()
         return s_
 
     def replay_buffer(self, s, a, r, s_):
+        s = s.cpu()
+        s_ = s_.cpu()
         s = np.array(s).astype(float).round(2).reshape(1, 2)
         s_ = np.array(s_).astype(float).round(2).reshape(1, 2)
         a = np.array(a).astype(int).reshape(1, 1)
@@ -131,6 +134,8 @@ class DQN():
         self.memory_counter += 1
 
     def reward(self, s, s_):
+        s = s.cpu()
+        s_ = s_.cpu()
         s_index = self.get_index(s)
         s_index_ = self.get_index(s_)
         if s_index != s_index_:
@@ -155,18 +160,24 @@ class DQN():
         self.learn_step_counter += 1
         sample_index = np.random.choice(self.memory_capacity, self.batch_size)
         memory_tmp = self.memory[sample_index]
-        s_tmp = torch.FloatTensor(memory_tmp[:, :, :self.n_states])
-        a_tmp = torch.LongTensor(memory_tmp[:, :, self.n_states: self.n_states+1].astype(int))
-        r_tmp = torch.FloatTensor(memory_tmp[:, :, self.n_states+1: self.n_states+2])
-        s_tmp_ = torch.FloatTensor(memory_tmp[:, :, -self.n_states :])
+        if torch.cuda.is_available():
+            s_tmp = torch.cuda.FloatTensor(memory_tmp[:, :, :self.n_states])
+            a_tmp = torch.cuda.LongTensor(memory_tmp[:, :, self.n_states: self.n_states+1].astype(int))
+            r_tmp = torch.cuda.FloatTensor(memory_tmp[:, :, self.n_states+1: self.n_states+2])
+            s_tmp_ = torch.cuda.FloatTensor(memory_tmp[:, :, -self.n_states :])
+        else:
+            s_tmp = torch.FloatTensor(memory_tmp[:, :, :self.n_states])
+            a_tmp = torch.LongTensor(memory_tmp[:, :, self.n_states: self.n_states+1].astype(int))
+            r_tmp = torch.FloatTensor(memory_tmp[:, :, self.n_states+1: self.n_states+2])
+            s_tmp_ = torch.FloatTensor(memory_tmp[:, :, -self.n_states :])
         q_eval = self.eval_model(s_tmp).gather(2, a_tmp).reshape(self.batch_size, 1)
         q_next = self.target_model(s_tmp_).detach()     # detach from graph, don't backpropagate
         q_target = r_tmp.reshape(self.batch_size, 1) + self.gamma * q_next.max(2)[0].view(self.batch_size, 1)   # shape (batch, 1)
-        loss = self.loss_func(q_eval, q_target)
-        print('loss:', loss)
-        self.loss_list.append(loss.item())
+        self.loss_tmp = self.loss_func(q_eval, q_target)
+        # print('loss:', self.loss_tmp)
+        self.loss_list.append(self.loss_tmp.item())
         self.optimizer.zero_grad()
-        loss.backward()
+        self.loss_tmp.backward()
         self.optimizer.step()
 
 
@@ -175,21 +186,16 @@ if __name__ == '__main__':
     obj = np.array([2.65, 1.95]).reshape(1, 2)
     init = np.array([3.35, 2.75]).reshape(1, 2)
     dqn = DQN()
-    dtype = torch.FloatTensor
-    if torch.cuda.is_available():
-        dtype = torch.cuda.FloatTensor
-        dqn = DQN().cuda()
+    s_tmp = torch.cuda.FloatTensor(init) if torch.cuda.is_available() else torch.Tensor(init)
 
-    s_tmp = torch.Tensor(init)
-
-    for i in range(1, 10001):
+    for i in range(1, 100001):
         # a_tmp = dqn.choose_action(s_tmp)
         a_tmp = dqn.greedy_choose_action(s_tmp, i)
         s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)
         r_tmp = dqn.reward(s_tmp, s_tmp_)
         dqn.replay_buffer(s_tmp, a_tmp, r_tmp, s_tmp_)
         if r_tmp == -5:
-            s_tmp = torch.Tensor(init)
+            s_tmp = torch.cuda.FloatTensor(init) if torch.cuda.is_available() else torch.Tensor(init)
             dqn.greedy_epsilon = 1
             a_tmp = dqn.choose_action(s_tmp)
             s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)
@@ -198,6 +204,8 @@ if __name__ == '__main__':
         s_tmp = s_tmp_.clone()
         if dqn.memory_counter > dqn.memory_capacity:
             dqn.learn()
+        if i % 200 == 0:
+            print(dqn.loss_tmp)
 
     loss_list = dqn.loss_list
     plt.plot(loss_list)
