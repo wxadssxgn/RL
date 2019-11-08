@@ -7,7 +7,7 @@ import time
 import matplotlib.pyplot as plt
 
 # Define Object and Initial Geometry
-obj = pd.DataFrame(np.array([2.95, 2.25]).reshape(1, 2), columns=['R', 'r'])
+obj = pd.DataFrame(np.array([2.45, 1.85]).reshape(1, 2), columns=['R', 'r'])
 init = pd.DataFrame(np.array([3.35, 2.75]).reshape(1, 2), columns=['R', 'r'])
 
 # Obtain the Absolute Value of S Parameter
@@ -43,7 +43,7 @@ def spec_error(obj_spec, current_spec):
 n_states = len(geometry)
 actions = ['R+0.05', 'R-0.05', 'r+0.05', 'r-0.05']
 epsilon = 0.9
-alpha = 0.1
+alpha = 0.9
 gamma = 0.9
 max_episode = 500
 
@@ -98,15 +98,19 @@ def env_feedback(current_state, action_name):
             tmp_state = pd.DataFrame.copy(current_state)
             r = -10
             return tmp_state, r
-    r = reward(tmp_state)
+    r = reward(current_state, tmp_state)
     return tmp_state, r
 
-def reward(current_state):
-    current_state_index = geo_table[(geo_table.R == current_state.loc[:, 'R'][0]) & (geo_table.r == current_state.loc[:, 'r'][0])].index[0]
-    current_spec = spectrum[current_state_index]
-    tmp_spec_error = spec_error(obj_spec, current_spec)
-    reward = -np.log(tmp_spec_error) - 10
-    # reward = tmp_spec_error
+def reward(s, s_):
+    s_index = geo_table[(geo_table.R == s.loc[:, 'R'][0]) & (geo_table.r == s.loc[:, 'r'][0])].index[0]
+    s_spec = spectrum[s_index]
+    s_error = spec_error(obj_spec, s_spec)
+    r1 = min(-np.log(s_error), 100)
+    s_index_ = geo_table[(geo_table.R == s_.loc[:, 'R'][0]) & (geo_table.r == s_.loc[:, 'r'][0])].index[0]
+    s_spec_ = spectrum[s_index_]
+    s_error_ = spec_error(obj_spec, s_spec_)
+    r2 = min(-np.log(s_error_), 100)
+    reward = r2 - r1
     return reward
 
 steps_list= []
@@ -120,9 +124,10 @@ def main():
             action_name = choose_action(tmp, q_table)
             tmp_index = geo_table[(geo_table.R == tmp.loc[:, 'R'][0]) & (geo_table.r == tmp.loc[:, 'r'][0])].index[0]
             tmp_, r = env_feedback(tmp, action_name)
-            if r > 5:
+            if r > 50:
                 q_table.loc[tmp_index, action_name] += 1e2
                 step_counter += 1
+                # print(tmp_, step_counter)
                 break
             tmp_index_ = geo_table[(geo_table.R == tmp_.loc[:, 'R'][0]) & (geo_table.r == tmp_.loc[:, 'r'][0])].index[0]
             q_predict = q_table.loc[tmp_index, action_name]
@@ -130,6 +135,7 @@ def main():
             q_table.loc[tmp_index, action_name] += alpha * (q_target - q_predict)
             tmp = tmp_
             step_counter += 1
+            # print(tmp, step_counter)
         steps_list.append(step_counter)
         print('episode: ', episode+1, '  ', 'steps: ', step_counter)
 

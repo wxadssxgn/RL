@@ -104,38 +104,44 @@ def env_feedback(current_state, action_name):
             tmp_state = pd.DataFrame.copy(current_state)
             r = -10
             return tmp_state, r
-    r = reward(tmp_state)
+    r = reward(current_state, tmp_state)
     return tmp_state, r
 
-
-
-def reward(current_state):
-    current_state_index = geo_table[(geo_table.R == current_state.loc[:, 'R'][0]) & (geo_table.r == current_state.loc[:, 'r'][0])].index[0]
-    current_spec = spectrum[current_state_index]
-    tmp_spec_error = spec_error(obj_spec, current_spec)
-    reward = -np.log(tmp_spec_error) - 10
-    # reward = tmp_spec_error
+def reward(s, s_):
+    s_index = geo_table[(geo_table.R == s.loc[:, 'R'][0]) & (geo_table.r == s.loc[:, 'r'][0])].index[0]
+    s_spec = spectrum[s_index]
+    s_error = spec_error(obj_spec, s_spec)
+    r1 = min(-np.log(s_error), 1000)
+    s_index_ = geo_table[(geo_table.R == s_.loc[:, 'R'][0]) & (geo_table.r == s_.loc[:, 'r'][0])].index[0]
+    s_spec_ = spectrum[s_index_]
+    s_error_ = spec_error(obj_spec, s_spec_)
+    r2 = min(-np.log(s_error_), 1000)
+    reward = r2 - r1
     return reward
 
 
 def main():
     global q_table
     q_table = q_table_init(n_states, actions)
-    # step_counter = 0
+    step_counter = 0
     tmp = init
     while 1:
         action_name = choose_action(tmp, q_table)
         tmp_index = geo_table[(geo_table.R == tmp.loc[:, 'R'][0]) & (geo_table.r == tmp.loc[:, 'r'][0])].index[0]
         tmp_, r = env_feedback(tmp, action_name)
-        if r > 5:
-            # print(tmp_)
+        if r > 50:
+            q_table.loc[tmp_index, action_name] += 1e2
             break
         tmp_index_ = geo_table[(geo_table.R == tmp_.loc[:, 'R'][0]) & (geo_table.r == tmp_.loc[:, 'r'][0])].index[0]
         q_predict = q_table.loc[tmp_index, action_name]
         q_target = r + gamma * q_table.iloc[tmp_index_, :].max()
         q_table.loc[tmp_index, action_name] += alpha * (q_target - q_predict)
         tmp = tmp_
-        # step_counter += 1
+        step_counter += 1
+        if step_counter % 50 == 0:
+            print(tmp, step_counter)
+        if step_counter % 3000 == 0:
+            break
         # if step_counter % 2000 == 0:
         #     tmpidxmax = q_table.stack().idxmax()[0]
         #     tmpargxmax = geo_table.iloc[tmpidxmax]
@@ -152,20 +158,20 @@ def counter():
     count = 0
     for i in range(len(a)):
         aa = a.iloc[i, :]
-        if aa[0] + aa[1] + aa[2] + aa[3] > 0:
+        if aa[0] !=0 or aa[1] !=0 or aa[2] !=0 or aa[3] !=0:
             count += 1
     return count
 
 
 if __name__ == '__main__':
     cc = []
-    epoch = 0
     for ii in range(100):
         main()
         nn = counter()
         cc.append(nn)
-        epoch += 1
-        print(epoch)
+        print('-'*50)
+        print(ii+1, nn)
+        print('-'*50)
     means = sum(cc) / len(cc)
     print(means)
 

@@ -92,19 +92,27 @@ dqn = DQN()
 
 print('\nCollecting experience...')
 
-for i_episode in range(400):
+for i_episode in range(1):
     s = env.reset()
     ep_r = 0
     while True:
         env.render()
         a = dqn.choose_action(s)
+        print('a', a)
         # take action
         s_, r, done, info = env.step(a)
+        print('s_', s_)
+        print('r', r)
+        print('done', done)
+        print('info', info)
         # modify the reward
         x, x_dot, theta, theta_dot = s_
         r1 = (env.x_threshold - abs(x)) / env.x_threshold - 0.8
+        print('r1', r1)
         r2 = (env.theta_threshold_radians - abs(theta)) / env.theta_threshold_radians - 0.5
+        print('r2', r2)
         r = r1 + r2
+        print('r', r)
         dqn.store_transition(s, a, r, s_)
         ep_r += r
         if dqn.memory_counter > MEMORY_CAPACITY:
@@ -115,4 +123,6 @@ for i_episode in range(400):
         if done:
             break
         s = s_
+        print('-------------------------------------------------------------------')
 
+print('end')
