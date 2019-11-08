@@ -145,10 +145,10 @@ class DQN():
             s_spec_ = np.concatenate((s_spec_[:, 0], s_spec_[:, 1]), axis=0)
             s_error = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(self.obj_spec)
             s_error_ = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(self.obj_spec)
-            # r1 = min(-np.log(s_error), 10)
-            # r2 = min(-np.log(s_error_), 10)
-            # r = (r2 - r1) * 10
-            r = -np.log(max(s_error_, 1e-4)) - 3
+            r1 = -np.log(max(s_error, 1e-4))
+            r2 = -np.log(max(s_error_, 1e-4))
+            r = (r2 - r1) * 20
+            # r = -np.log(max(s_error_, 1e-4)) - 3
             return r
         else:
             r = -5
@@ -188,7 +188,7 @@ if __name__ == '__main__':
     dqn = DQN()
     s_tmp = torch.cuda.FloatTensor(init) if torch.cuda.is_available() else torch.Tensor(init)
 
-    for i in range(1, 100001):
+    for i in range(1, 10001):
         # a_tmp = dqn.choose_action(s_tmp)
         a_tmp = dqn.greedy_choose_action(s_tmp, i)
         s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)
