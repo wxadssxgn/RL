@@ -8,26 +8,26 @@ from torch.autograd import Variable
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Define object and initial geometry
-obj = np.array([2.65, 1.95]).reshape(1, 2)
-init = np.array([3.35, 2.75]).reshape(1, 2)
-
 class model(nn.Module):
     def __init__(self, ):
         super(model, self).__init__()
-        self.layer1 = nn.Sequential(nn.Linear(2, 20), nn.Dropout(0), nn.ReLU(inplace=True))
-        self.layer2 = nn.Sequential(nn.Linear(20, 20), nn.Dropout(0), nn.ReLU(inplace=True))
-        self.layer3 = nn.Sequential(nn.Linear(20, 20), nn.Dropout(0), nn.ReLU(inplace=True))
-        self.layer4 = nn.Sequential(nn.Linear(20, 4))
+        self.layer1 = nn.Sequential(nn.Linear(2, 10), nn.Dropout(0), nn.ReLU(inplace=True))
+        self.layer2 = nn.Sequential(nn.Linear(10, 40), nn.Dropout(0), nn.ReLU(inplace=True))
+        self.layer3 = nn.Sequential(nn.Linear(40, 40), nn.Dropout(0), nn.ReLU(inplace=True))
+        self.layer4 = nn.Sequential(nn.Linear(40, 40), nn.Dropout(0), nn.ReLU(inplace=True))
+        self.layer5 = nn.Sequential(nn.Linear(40, 20), nn.Dropout(0), nn.ReLU(inplace=True))
+        self.layer6 = nn.Sequential(nn.Linear(20, 4))
 
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        x = self.layer5(x)
+        x = self.layer6(x)
         return x
 
-class dqn():
+class DQN():
     def __init__(self, ):
         spectrum = np.load(file='HYB_s.npy')
         spectrum = self.get_s_para(spectrum)
@@ -41,24 +41,31 @@ class dqn():
         self.n_states = 2
         self.actions = ['R+0.05', 'R-0.05', 'r+0.05', 'r-0.05']
         self.epsilon = 0.9
+        self.greedy_epsilon = 1
         self.alpha = 0.1
         self.gamma = 0.9
         self.memory_capacity = 100
-        self.LR = 0.01
-        self.batch_size = 20
+        self.LR = 1e-3
+        self.batch_size = 100
 
         self.eval_model = model()
         self.target_model = model()
-        if torch.cuda.is_available():
-            self.eval_model = self.eval_model.cuda()
-            self.target_model = self.target_model.cuda()
+        self.eval_model.apply(self.weights_init_uniform)
+        self.target_model.apply(self.weights_init_uniform)
 
         self.learn_step_counter = 0
         self.memory_counter = 0
-        self.target_replace_iteration = 10
+        self.target_replace_iteration = 30
         self.memory = np.zeros((self.memory_capacity, 1, self.n_states * 2 + 2))
         self.optimizer = torch.optim.Adam(self.eval_model.parameters(), lr=self.LR)
         self.loss_func = nn.MSELoss()
+        self.loss_list = []
+
+    def weights_init_uniform(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Linear') != -1:
+            m.weight.data.uniform_(0.0, 0.1)
+            m.bias.data.fill_(0)
 
     def get_index(self, s):
         for i in range(len(self.geometry)):
@@ -80,10 +87,22 @@ class dqn():
         if np.random.uniform() < self.epsilon:
             action_values = self.eval_model.forward(s)
             a_index = torch.max(action_values, 1)[1].numpy()
-            return a_index
         else:
             a_index = np.random.randint(0, 4, size=(1, ))
-            return a_index
+        return a_index
+
+    def greedy_choose_action(self, s, i):
+        # a_index.type = array
+        if np.random.uniform() > self.greedy_epsilon:
+            action_values = self.eval_model.forward(s)
+            a_index = torch.max(action_values, 1)[1].numpy()
+        else:
+            a_index = np.random.randint(0, 4, size=(1, ))
+        if i % 500 == 0:
+            self.greedy_epsilon = self.greedy_epsilon * 0.9
+        if self.greedy_epsilon < 0.1:
+            self.greedy_epsilon = 0.1
+        return a_index
     
     def env_feedback(self, s, a):
         # s.type = Tensor
@@ -96,11 +115,12 @@ class dqn():
             s_[0, 1] = s_[0, 1] + 0.05
         else:
             s_[0, 1] = s_[0, 1] - 0.05
-        if s_[0, 1] >= s_[0, 0] or s_[0, 0] > 3.80 or s_[0, 1] < 1.00:
+        tmp_s = s_.numpy().round(2)
+        if tmp_s[0, 1] >= tmp_s[0, 0] or tmp_s[0, 0] > 3.80 or tmp_s[0, 1] < 1.00:
             s_ = s.clone()
         return s_
 
-    def store_transition(self, s, a, r, s_):
+    def replay_buffer(self, s, a, r, s_):
         s = np.array(s).astype(float).round(2).reshape(1, 2)
         s_ = np.array(s_).astype(float).round(2).reshape(1, 2)
         a = np.array(a).astype(int).reshape(1, 1)
@@ -113,65 +133,75 @@ class dqn():
     def reward(self, s, s_):
         s_index = self.get_index(s)
         s_index_ = self.get_index(s_)
-        s_spec = self.spectrum[s_index]
-        s_spec_ = self.spectrum[s_index_]
-        s_spec = np.concatenate((s_spec[:, 0], s_spec[:, 1]), axis=0)
-        s_spec_ = np.concatenate((s_spec_[:, 0], s_spec_[:, 1]), axis=0)
-        s_error = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(self.obj_spec)
-        s_error_ = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(self.obj_spec)
-        r1 = min(-np.log(s_error), 100)
-        r2 = min(-np.log(s_error_), 100)
-        r = r2 - r1
-        return r
+        if s_index != s_index_:
+            s_spec = self.spectrum[s_index]
+            s_spec_ = self.spectrum[s_index_]
+            s_spec = np.concatenate((s_spec[:, 0], s_spec[:, 1]), axis=0)
+            s_spec_ = np.concatenate((s_spec_[:, 0], s_spec_[:, 1]), axis=0)
+            s_error = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(self.obj_spec)
+            s_error_ = ((np.concatenate((self.obj_spec[:, 0], self.obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(self.obj_spec)
+            # r1 = min(-np.log(s_error), 10)
+            # r2 = min(-np.log(s_error_), 10)
+            # r = (r2 - r1) * 10
+            r = -np.log(max(s_error_, 1e-4)) - 3
+            return r
+        else:
+            r = -5
+            return r
 
     def learn(self):
-        # target parameter update
         if self.learn_step_counter % self.target_replace_iteration == 0:
             self.target_model.load_state_dict(self.eval_model.state_dict())
         self.learn_step_counter += 1
-        # sample batch transitions
         sample_index = np.random.choice(self.memory_capacity, self.batch_size)
-        b_memory = self.memory[sample_index]
-        b_s = torch.FloatTensor(b_memory[:, :, :self.n_states])
-        b_a = torch.LongTensor(b_memory[:, :, self.n_states: self.n_states+1].astype(int))
-        b_r = torch.FloatTensor(b_memory[:, :, self.n_states+1: self.n_states+2])
-        b_s_ = torch.FloatTensor(b_memory[:, :, -self.n_states :])
-        # q_eval w.r.t the action in experience
-        q_eval = self.eval_model(b_s).gather(2, b_a).reshape(self.batch_size, 1)
-        q_next = self.target_model(b_s_).detach()     # detach from graph, don't backpropagate
-        q_target = b_r.reshape(self.batch_size, 1) + self.gamma * q_next.max(2)[0].view(self.batch_size, 1)   # shape (batch, 1)
+        memory_tmp = self.memory[sample_index]
+        s_tmp = torch.FloatTensor(memory_tmp[:, :, :self.n_states])
+        a_tmp = torch.LongTensor(memory_tmp[:, :, self.n_states: self.n_states+1].astype(int))
+        r_tmp = torch.FloatTensor(memory_tmp[:, :, self.n_states+1: self.n_states+2])
+        s_tmp_ = torch.FloatTensor(memory_tmp[:, :, -self.n_states :])
+        q_eval = self.eval_model(s_tmp).gather(2, a_tmp).reshape(self.batch_size, 1)
+        q_next = self.target_model(s_tmp_).detach()     # detach from graph, don't backpropagate
+        q_target = r_tmp.reshape(self.batch_size, 1) + self.gamma * q_next.max(2)[0].view(self.batch_size, 1)   # shape (batch, 1)
         loss = self.loss_func(q_eval, q_target)
-        # print('b_s:', b_s)
-        # print('b_a:', b_a)
-        # print('b_r:', b_r)
-        # print('q_eval:', q_eval)
-        # print('q_next:', q_next)
-        # print('q_target:', q_target)
         print('loss:', loss)
+        self.loss_list.append(loss.item())
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-dqn_model = dqn()
 
-s_tmp = np.array(init)
-s_tmp = torch.Tensor(s_tmp)
+if __name__ == '__main__':
+    # Define object and initial geometry
+    obj = np.array([2.65, 1.95]).reshape(1, 2)
+    init = np.array([3.35, 2.75]).reshape(1, 2)
+    dqn = DQN()
+    dtype = torch.FloatTensor
+    if torch.cuda.is_available():
+        dtype = torch.cuda.FloatTensor
+        dqn = DQN().cuda()
 
-for i in range(5000):
-    a_tmp = dqn_model.choose_action(s_tmp)
-    s_tmp_ = dqn_model.env_feedback(s_tmp, a_tmp)
-    r_tmp = dqn_model.reward(s_tmp, s_tmp_)
-    dqn_model.store_transition(s_tmp, a_tmp, r_tmp, s_tmp_)
-    s_tmp = s_tmp_.clone()
-    if dqn_model.memory_counter > dqn_model.memory_capacity:
-        print(i)
-        dqn_model.learn()
+    s_tmp = torch.Tensor(init)
 
-# a_tmp = dqn_model.choose_action(s_tmp)
-# s_tmp_ = dqn_model.env_feedback(s_tmp, a_tmp)
-# r_tmp = dqn_model.reward(s_tmp, s_tmp_)
-# dqn_model.store_transition(s_tmp, a_tmp, r_tmp, s_tmp_)
-# s_tmp = s_tmp_.clone()
-# dqn_model.learn()
+    for i in range(1, 10001):
+        # a_tmp = dqn.choose_action(s_tmp)
+        a_tmp = dqn.greedy_choose_action(s_tmp, i)
+        s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)
+        r_tmp = dqn.reward(s_tmp, s_tmp_)
+        dqn.replay_buffer(s_tmp, a_tmp, r_tmp, s_tmp_)
+        if r_tmp == -5:
+            s_tmp = torch.Tensor(init)
+            dqn.greedy_epsilon = 1
+            a_tmp = dqn.choose_action(s_tmp)
+            s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)
+            r_tmp = dqn.reward(s_tmp, s_tmp_)
+        dqn.replay_buffer(s_tmp, a_tmp, r_tmp, s_tmp_)
+        s_tmp = s_tmp_.clone()
+        if dqn.memory_counter > dqn.memory_capacity:
+            dqn.learn()
 
-print('end')
+    loss_list = dqn.loss_list
+    plt.plot(loss_list)
+    plt.show()
+
+
+    print('end')
