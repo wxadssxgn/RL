@@ -49,9 +49,9 @@ class DQN():
         self.greedy_epsilon = 1
         self.alpha = 0.1
         self.gamma = 0.9
-        self.memory_capacity = 500
+        self.memory_capacity = 1000
         self.LR = 1e-4
-        self.batch_size = 300
+        self.batch_size = 200
 
         self.eval_model = model().cuda() if torch.cuda.is_available() else model()
         self.target_model = model().cuda() if torch.cuda.is_available() else model()
@@ -234,7 +234,7 @@ if __name__ == '__main__':
         s_tmp = s_tmp_.clone()
         if dqn.memory_counter > dqn.memory_capacity:
             dqn.learn()
-        if i % 1000 == 0:
+        if i % 100 == 0:
             print(dqn.loss_tmp)
 
     loss_list = dqn.loss_list

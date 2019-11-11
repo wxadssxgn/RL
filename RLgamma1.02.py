@@ -143,17 +143,23 @@ def env_feedback(current_state, action_name):
             tmp_state = pd.DataFrame.copy(current_state)
             r = -10
             return tmp_state, r
-    r = reward(tmp_state)
+    r = reward(current_state, tmp_state)
     return tmp_state, r
 
-def reward(current_state):
-    current_state_index = geo_table[(geo_table.SubWidth == current_state.loc[:, 'SubWidth'][0]) & (geo_table.RadiusOuter \
-        == current_state.loc[:, 'RadiusOuter'][0]) & (geo_table.RadiusInner == current_state.loc[:, 'RadiusInner'][0]) \
-            & (geo_table.GapLength == current_state.loc[:, 'GapLength'][0])].index[0]
-    current_spec = spectrum[current_state_index]
-    tmp_spec_error = spec_error(obj_spec, current_spec)
-    reward = -np.log(tmp_spec_error) - 10
-    # reward = tmp_spec_error
+def reward(s, s_):
+    s_index = geo_table[(geo_table.SubWidth == s.loc[:, 'SubWidth'][0]) & (geo_table.RadiusOuter \
+        == s.loc[:, 'RadiusOuter'][0]) & (geo_table.RadiusInner == s.loc[:, 'RadiusInner'][0]) \
+            & (geo_table.GapLength == s.loc[:, 'GapLength'][0])].index[0]
+    s_spec = spectrum[s_index]
+    s_error = spec_error(obj_spec, s_spec)
+    r1 = min(-np.log(s_error), 1000)
+    s_index_ = geo_table[(geo_table.SubWidth == s_.loc[:, 'SubWidth'][0]) & (geo_table.RadiusOuter \
+        == s_.loc[:, 'RadiusOuter'][0]) & (geo_table.RadiusInner == s_.loc[:, 'RadiusInner'][0]) \
+            & (geo_table.GapLength == s_.loc[:, 'GapLength'][0])].index[0]
+    s_spec_ = spectrum[s_index_]
+    s_error_ = spec_error(obj_spec, s_spec_)
+    r2 = min(-np.log(s_error_), 1000)
+    reward = r2 - r1
     return reward
 
 def main():
@@ -194,7 +200,7 @@ def counter():
 if __name__ == '__main__':
     cc = []
     epoch = 0
-    for ii in range(100):
+    for ii in range(500):
         main()
         nn = counter()
         cc.append(nn)
