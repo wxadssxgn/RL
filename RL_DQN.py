@@ -190,7 +190,7 @@ if __name__ == '__main__':
     dqn = DQN()
     s_tmp = torch.cuda.FloatTensor(init) if torch.cuda.is_available() else torch.Tensor(init)
 
-    for i in range(1, 10001):
+    for i in range(1, 100001):
         # a_tmp = dqn.choose_action(s_tmp)
         a_tmp = dqn.greedy_choose_action(s_tmp, i)
         s_tmp_ = dqn.env_feedback(s_tmp, a_tmp)

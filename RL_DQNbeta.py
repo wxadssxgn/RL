@@ -92,6 +92,7 @@ for i in range(len(hyb_memory)):
     print(i)
 
 # np.savetxt('HYB_memory.txt', hyb_memory.squeeze(1), fmt='%.2f')
+np.save('HYB_memory.npy', hyb_memory)
 
 
 print('end')
