@@ -6,6 +6,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 memory = np.load('HYB_memory.npy')
+for i in range(len(memory)):
+    print(memory[i])
 
 obj = np.array([2.65, 1.95]).reshape(1, 2)
 init = np.array([3.00, 2.20]).reshape(1, 2)
