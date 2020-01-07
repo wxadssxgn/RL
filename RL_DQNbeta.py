@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import numpy as np
@@ -32,18 +31,18 @@ memory = np.zeros((len(spectrum)*4 , 1, n_states*2 + 2))
 for j in range(len(geometry)):
     geo_tmp = geometry[j]
     i = 4 * j
-    memory[i+0, 0, 0: 2] = geometry[j]
-    memory[i+1, 0, 0: 2] = geometry[j]
-    memory[i+2, 0, 0: 2] = geometry[j]
-    memory[i+3, 0, 0: 2] = geometry[j]
-    memory[i+0, 0, 2] = 0
-    memory[i+1, 0, 2] = 1
-    memory[i+2, 0, 2] = 2
-    memory[i+3, 0, 2] = 3
-    memory[i+0, 0, -2: ] = np.array([geometry[j, 0]+0.05, geometry[j, 1]])
-    memory[i+1, 0, -2: ] = np.array([geometry[j, 0]-0.05, geometry[j, 1]])
-    memory[i+2, 0, -2: ] = np.array([geometry[j, 0], geometry[j, 1]+0.05])
-    memory[i+3, 0, -2: ] = np.array([geometry[j, 0], geometry[j, 1]-0.05])
+    memory[i+0, 0,  0: 2] = geometry[j]
+    memory[i+1, 0,  0: 2] = geometry[j]
+    memory[i+2, 0,  0: 2] = geometry[j]
+    memory[i+3, 0,  0: 2] = geometry[j]
+    memory[i+0, 0,  2   ] = 0
+    memory[i+1, 0,  2   ] = 1
+    memory[i+2, 0,  2   ] = 2
+    memory[i+3, 0,  2   ] = 3
+    memory[i+0, 0, -2:  ] = np.array([geometry[j, 0]+0.05, geometry[j, 1]])
+    memory[i+1, 0, -2:  ] = np.array([geometry[j, 0]-0.05, geometry[j, 1]])
+    memory[i+2, 0, -2:  ] = np.array([geometry[j, 0], geometry[j, 1]+0.05])
+    memory[i+3, 0, -2:  ] = np.array([geometry[j, 0], geometry[j, 1]-0.05])
 
 memory = memory.round(2)
 
@@ -68,19 +67,25 @@ obj_spec = spectrum[obj_index]
 init_spec = spectrum[init_index]
 
 def reward(s, s_):
+    '''
+    s : current state
+    s_: next state
+    '''
     s_index = get_index(s)
     s_index_ = get_index(s_)
     if s_index != s_index_:
-        s_spec = spectrum[s_index]
+        s_spec  = spectrum[s_index]
         s_spec_ = spectrum[s_index_]
-        s_spec = np.concatenate((s_spec[:, 0], s_spec[:, 1]), axis=0)
+        s_spec  = np.concatenate((s_spec[:, 0], s_spec[:, 1]), axis=0)
         s_spec_ = np.concatenate((s_spec_[:, 0], s_spec_[:, 1]), axis=0)
-        s_error = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(obj_spec)
-        s_error_ = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(obj_spec)
-        r1 = -np.log(max(s_error, 1e-4))
-        r2 = -np.log(max(s_error_, 1e-4))
-        r = (r2 - r1) * 15
+        # s_error = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec) ** 2).sum() / len(obj_spec)
+        # s_error_ = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec_) ** 2).sum() / len(obj_spec)
+        # r1 = -np.log(max(s_error, 1e-4))
+        # r2 = -np.log(max(s_error_, 1e-4))
+        # r = (r2 - r1) * 15
         # r = -np.log(max(s_error_, 1e-4)) - 3
+        s_error_ = ((np.concatenate((obj_spec[:, 0], obj_spec[:, 1]), axis=0) - s_spec_)).sum() / len(obj_spec)
+        r = s_error_
         return r
     else:
         r = -10
@@ -89,10 +94,13 @@ def reward(s, s_):
 for i in range(len(hyb_memory)):
     r_tmp = reward(hyb_memory[i][0][0: 2], hyb_memory[i][0][-2: ])
     hyb_memory[i][0][3] = r_tmp
-    print(i)
+    # print(i)
+
+for j in range(len(hyb_memory)):
+    print(hyb_memory[j])
 
 # np.savetxt('HYB_memory.txt', hyb_memory.squeeze(1), fmt='%.2f')
-np.save('HYB_memory.npy', hyb_memory)
+# np.save('HYB_memory.npy', hyb_memory)
 
 
 print('end')
